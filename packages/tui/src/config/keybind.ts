@@ -239,11 +239,12 @@ export const Definitions = {
 
   agents_up: keybind("up", "Move to previous agent in the fleet view"),
   agents_down: keybind("down", "Move to next agent in the fleet view"),
-  agents_resume: keybind("return", "Resume the selected agent session"),
+  agents_resume: keybind("return,right", "Resume the selected agent session"),
   agents_interrupt: keybind("i", "Interrupt the selected agent session"),
   agents_delete: keybind("d", "Delete the selected agent session"),
   agents_focus_prompt: keybind("n", "Focus the prompt to dispatch a new session"),
   agents_home: keybind("escape,q", "Leave the agents fleet view"),
+  agents_back: keybind("left", "Return to the agents fleet view from a session"),
   agents_prompt_blur: keybind("escape", "Blur the prompt and return to the fleet list"),
 } satisfies Record<string, Definition>
 
@@ -431,6 +432,7 @@ export const CommandMap = {
   agents_delete: "agents.delete",
   agents_focus_prompt: "agents.focus_prompt",
   agents_home: "agents.home",
+  agents_back: "agents.back",
   agents_prompt_blur: "agents.prompt.blur",
 } satisfies BindingCommandMap
 const CommandDescriptions = Object.fromEntries(

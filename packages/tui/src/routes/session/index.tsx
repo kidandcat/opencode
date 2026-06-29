@@ -141,6 +141,7 @@ const sessionBindingCommands = [
   "session.parent",
   "session.child.next",
   "session.child.previous",
+  "agents.back",
 ] as const
 
 const sessionGlobalBindingCommands = [
@@ -1055,6 +1056,17 @@ export function Session() {
         }
         dialog.clear()
       }),
+    },
+    {
+      title: "Back to agents fleet",
+      value: "agents.back",
+      category: "Session",
+      hidden: true,
+      enabled: !session()?.parentID,
+      run: () => {
+        navigate({ type: "agents" })
+        dialog.clear()
+      },
     },
     {
       title: "Next child session",
