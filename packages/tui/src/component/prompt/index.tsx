@@ -60,6 +60,7 @@ import { readLocalAttachment } from "./local-attachment"
 export type PromptProps = {
   sessionID?: string
   visible?: boolean
+  autoFocus?: boolean
   disabled?: boolean
   onSubmit?: () => void
   onCreated?: (sessionID: string) => void
@@ -634,6 +635,8 @@ export function Prompt(props: PromptProps) {
       if (input.focused) input.blur()
       return
     }
+
+    if (props.autoFocus === false) return
 
     // Slot/plugin updates can remount the background prompt while a dialog is open.
     // Keep focus with the dialog and let the prompt reclaim it after the dialog closes.

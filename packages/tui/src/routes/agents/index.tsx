@@ -59,7 +59,6 @@ export function Agents() {
 
   const [selectedID, setSelectedID] = createSignal<string>()
   const [promptRef, setPromptRef] = createSignal<PromptRef | undefined>()
-  const [promptVisible, setPromptVisible] = createSignal(false)
   const [now, setNow] = createSignal(Date.now())
   const [bgJobs, setBgJobs] = createSignal<Record<string, ExperimentalBackgroundJob>>({})
   let scroll: ScrollBoxRenderable | undefined
@@ -204,17 +203,15 @@ export function Agents() {
   }
 
   function focusPrompt() {
-    setPromptVisible(true)
-    queueMicrotask(() => promptRef()?.focus())
+    promptRef()?.focus()
   }
 
   function blurPrompt() {
-    setPromptVisible(false)
     promptRef()?.blur()
   }
 
   function goHome() {
-    setPromptVisible(false)
+    promptRef()?.blur()
     route.navigate({ type: "home" })
   }
 
@@ -411,13 +408,13 @@ export function Agents() {
           </box>
         )}
       </Show>
-      <box flexShrink={0} paddingLeft={2} paddingRight={2} paddingBottom={0} paddingTop={0} onMouseDown={() => setPromptVisible(true)}>
+      <box flexShrink={0} paddingLeft={2} paddingRight={2} paddingBottom={0} paddingTop={0} onMouseDown={() => promptRef()?.focus()}>
         <Prompt
           ref={(r) => {
             setPromptRef(r)
             promptRefCtx.set(r)
           }}
-          visible={promptVisible()}
+          autoFocus={false}
           onCreated={onCreated}
           placeholders={placeholder}
         />
