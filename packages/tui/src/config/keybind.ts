@@ -236,6 +236,15 @@ export const Definitions = {
   which_key_page_down: keybind("ctrl+alt+pagedown", "Page which-key down"),
   which_key_home: keybind("ctrl+alt+home", "Jump to first which-key binding"),
   which_key_end: keybind("ctrl+alt+end", "Jump to last which-key binding"),
+
+  agents_up: keybind("up", "Move to previous agent in the fleet view"),
+  agents_down: keybind("down", "Move to next agent in the fleet view"),
+  agents_resume: keybind("return", "Resume the selected agent session"),
+  agents_interrupt: keybind("i", "Interrupt the selected agent session"),
+  agents_delete: keybind("d", "Delete the selected agent session"),
+  agents_focus_prompt: keybind("n", "Focus the prompt to dispatch a new session"),
+  agents_home: keybind("escape,q", "Leave the agents fleet view"),
+  agents_prompt_blur: keybind("escape", "Blur the prompt and return to the fleet list"),
 } satisfies Record<string, Definition>
 
 type KeybindName = keyof typeof Definitions
@@ -415,6 +424,14 @@ export const CommandMap = {
   which_key_page_down: "which-key.page.down",
   which_key_home: "which-key.home",
   which_key_end: "which-key.end",
+  agents_up: "agents.up",
+  agents_down: "agents.down",
+  agents_resume: "agents.resume",
+  agents_interrupt: "agents.interrupt",
+  agents_delete: "agents.delete",
+  agents_focus_prompt: "agents.focus_prompt",
+  agents_home: "agents.home",
+  agents_prompt_blur: "agents.prompt.blur",
 } satisfies BindingCommandMap
 const CommandDescriptions = Object.fromEntries(
   Object.entries(Definitions).map(([name, item]) => [

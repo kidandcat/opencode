@@ -20,6 +20,7 @@ import { ExportCommand } from "./cli/cmd/export"
 import { ImportCommand } from "./cli/cmd/import"
 import { AttachCommand } from "./cli/cmd/attach"
 import { TuiThreadCommand } from "./cli/cmd/tui"
+import { AgentsCommand } from "./cli/cmd/agents"
 import { AcpCommand } from "./cli/cmd/acp"
 import { EOL } from "os"
 import { WebCommand } from "./cli/cmd/web"
@@ -81,6 +82,7 @@ const cli = yargs(args)
   .command(AcpCommand)
   .command(McpCommand)
   .command(TuiThreadCommand)
+  .command(AgentsCommand)
   .command(AttachCommand)
   .command(RunCommand)
   .command(GenerateCommand)

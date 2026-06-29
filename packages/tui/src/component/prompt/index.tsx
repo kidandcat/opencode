@@ -62,6 +62,7 @@ export type PromptProps = {
   visible?: boolean
   disabled?: boolean
   onSubmit?: () => void
+  onCreated?: (sessionID: string) => void
   ref?: (ref: PromptRef | undefined) => void
   hint?: JSX.Element
   right?: JSX.Element
@@ -1129,11 +1130,16 @@ export function Prompt(props: PromptProps) {
     // temporary hack to make sure the message is sent
     if (!props.sessionID) {
       if (editorParts.length > 0) editor.preserveSelectionFromNewSession()
+      const createdID = sessionID
       setTimeout(() => {
-        route.navigate({
-          type: "session",
-          sessionID,
-        })
+        if (props.onCreated) {
+          props.onCreated(createdID!)
+        } else {
+          route.navigate({
+            type: "session",
+            sessionID,
+          })
+        }
       }, 50)
     }
     input.clear()

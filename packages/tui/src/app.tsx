@@ -50,6 +50,7 @@ import { DialogConsoleOrg } from "./component/dialog-console-org"
 import { ThemeProvider, useTheme } from "./context/theme"
 import { Home } from "./routes/home"
 import { Session } from "./routes/session"
+import { Agents } from "./routes/agents"
 import { PromptHistoryProvider } from "./component/prompt/history"
 import { FrecencyProvider } from "./component/prompt/frecency"
 import { PromptStashProvider } from "./component/prompt/stash"
@@ -585,6 +586,17 @@ function App(props: { onSnapshot?: () => Promise<string[]>; pluginHost: TuiPlugi
         },
       },
       {
+        name: "agents.toggle",
+        title: "Agents fleet",
+        suggested: true,
+        category: "Session",
+        slashName: "agents",
+        run: () => {
+          route.navigate({ type: "agents" })
+          dialog.clear()
+        },
+      },
+      {
         name: "workspace.copy_path",
         title: "Copy worktree path",
         category: "Workspace",
@@ -1090,6 +1102,9 @@ function App(props: { onSnapshot?: () => Promise<string[]>; pluginHost: TuiPlugi
               <Show when={route.data.type === "session" ? route.data.sessionID : undefined} keyed>
                 {(_) => <Session />}
               </Show>
+            </Match>
+            <Match when={route.data.type === "agents"}>
+              <Agents />
             </Match>
           </Switch>
           {plugin()}
