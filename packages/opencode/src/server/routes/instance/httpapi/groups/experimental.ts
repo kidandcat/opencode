@@ -98,8 +98,24 @@ export const ExperimentalPaths = {
   worktreeReset: "/experimental/worktree/reset",
   session: "/experimental/session",
   sessionBackground: "/experimental/session/:sessionID/background",
+  backgroundJobs: "/experimental/background-jobs",
+  backgroundJobCancel: "/experimental/background-jobs/:id",
   resource: "/experimental/resource",
 } as const
+
+const BackgroundJobStatus = Schema.Literals(["running", "completed", "error", "cancelled"])
+const BackgroundJobInfo = Schema.Struct({
+  id: Schema.String,
+  type: Schema.String,
+  title: Schema.optional(Schema.String),
+  status: BackgroundJobStatus,
+  started_at: Schema.Number,
+  completed_at: Schema.optional(Schema.Number),
+  output: Schema.optional(Schema.String),
+  error: Schema.optional(Schema.String),
+  metadata: Schema.optional(Schema.Record(Schema.String, Schema.Unknown)),
+}).annotate({ identifier: "ExperimentalBackgroundJob" })
+const BackgroundJobList = Schema.Array(BackgroundJobInfo).annotate({ identifier: "ExperimentalBackgroundJobList" })
 
 export const ExperimentalApi = HttpApi.make("experimental")
   .add(
@@ -243,6 +259,30 @@ export const ExperimentalApi = HttpApi.make("experimental")
             summary: "Background subagents",
             description:
               "Detach any synchronous subagents currently blocking the session and continue them in the background.",
+          }),
+        ),
+        HttpApiEndpoint.get("backgroundJobs", ExperimentalPaths.backgroundJobs, {
+          query: WorkspaceRoutingQuery,
+          success: described(BackgroundJobList, "Background jobs"),
+          error: HttpApiError.BadRequest,
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "experimental.background.list",
+            summary: "List background jobs",
+            description:
+              "List in-memory background jobs (e.g. background subagents) for the current OpenCode instance with their status, output and error.",
+          }),
+        ),
+        HttpApiEndpoint.delete("backgroundJobCancel", ExperimentalPaths.backgroundJobCancel, {
+          params: { id: Schema.String },
+          query: WorkspaceRoutingQuery,
+          success: described(Schema.Boolean, "Cancel success"),
+          error: HttpApiError.BadRequest,
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "experimental.background.cancel",
+            summary: "Cancel a background job",
+            description: "Cancel a running background job by its id. No-op if the job is not running.",
           }),
         ),
         HttpApiEndpoint.get("resource", ExperimentalPaths.resource, {

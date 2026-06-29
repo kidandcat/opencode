@@ -4,6 +4,7 @@ import { useSync } from "../../context/sync"
 import { useSDK } from "../../context/sdk"
 import { useRoute } from "../../context/route"
 import { useTheme } from "../../context/theme"
+import { useProject } from "../../context/project"
 import { useToast } from "../../ui/toast"
 import { useDialog } from "../../ui/dialog"
 import { DialogConfirm } from "../../ui/dialog-confirm"
@@ -25,7 +26,11 @@ import {
   Show,
   type JSX,
 } from "solid-js"
-import type { AssistantMessage, Session, SessionStatus } from "@opencode-ai/sdk/v2"
+import type {
+  AssistantMessage,
+  ExperimentalBackgroundJob,
+  Session,
+} from "@opencode-ai/sdk/v2"
 import path from "path"
 
 const placeholder = {
@@ -33,19 +38,17 @@ const placeholder = {
   shell: ["ls -la", "git status", "pwd"],
 }
 
-type FleetStatus = "running" | "idle" | "compacting" | "retry"
+type FleetStatus = "running" | "idle" | "compacting" | "retry" | "error" | "cancelled"
 
-function statusOf(status: SessionStatus | undefined, session: Session | undefined): FleetStatus {
-  if (session?.time.compacting) return "compacting"
-  if (status?.type === "busy") return "running"
-  if (status?.type === "retry") return "retry"
-  return "idle"
+function isRunning(s: FleetStatus) {
+  return s === "running" || s === "retry" || s === "compacting"
 }
 
 export function Agents() {
   const sync = useSync()
   const sdk = useSDK()
   const route = useRoute()
+  const project = useProject()
   const { theme } = useTheme()
   const toast = useToast()
   const dialog = useDialog()
@@ -58,40 +61,77 @@ export function Agents() {
   const [promptRef, setPromptRef] = createSignal<PromptRef | undefined>()
   const [promptVisible, setPromptVisible] = createSignal(false)
   const [now, setNow] = createSignal(Date.now())
+  const [bgJobs, setBgJobs] = createSignal<Record<string, ExperimentalBackgroundJob>>({})
   let scroll: ScrollBoxRenderable | undefined
 
-  const interval = setInterval(() => setNow(Date.now()), 1000)
-  onCleanup(() => clearInterval(interval))
+  const tick = setInterval(() => setNow(Date.now()), 1000)
+  onCleanup(() => clearInterval(tick))
 
-  const sessions = createMemo(() => {
-    const list = sync.data.session.filter((s) => s.parentID === undefined)
-    return list.toSorted((a, b) => {
-      const sa = statusOf(sync.data.session_status[a.id], a)
-      const sb = statusOf(sync.data.session_status[b.id], b)
-      const running = (s: FleetStatus) => (s === "running" || s === "retry" || s === "compacting" ? 0 : 1)
-      const ra = running(sa)
-      const rb = running(sb)
+  function statusOf(s: Session): FleetStatus {
+    const job = bgJobs()[s.id]
+    if (job) {
+      if (job.status === "running") return "running"
+      if (job.status === "error") return "error"
+      if (job.status === "cancelled") return "cancelled"
+      return "idle"
+    }
+    if (s.time.compacting) return "compacting"
+    const status = sync.data.session_status[s.id]
+    if (status?.type === "busy") return "running"
+    if (status?.type === "retry") return "retry"
+    return "idle"
+  }
+
+  async function refreshBgJobs() {
+    if (!sync.data.capabilities.experimentalBackgroundSubagents) return
+    try {
+      const res = await sdk.client.experimental.background.list({ workspace: project.workspace.current() })
+      const list = res.data ?? []
+      setBgJobs(Object.fromEntries(list.map((j) => [j.id, j])))
+    } catch {
+      // background subagents disabled or unavailable; leave jobs empty
+    }
+  }
+
+  const bgPoll = setInterval(() => void refreshBgJobs(), 2000)
+  onCleanup(() => clearInterval(bgPoll))
+
+  const rows = createMemo(() => {
+    const all = sync.data.session
+    const childrenByParent = new Map<string, Session[]>()
+    for (const s of all) {
+      if (!s.parentID) continue
+      const arr = childrenByParent.get(s.parentID) ?? []
+      arr.push(s)
+      childrenByParent.set(s.parentID, arr)
+    }
+    const sortFn = (a: Session, b: Session) => {
+      const ra = isRunning(statusOf(a)) ? 0 : 1
+      const rb = isRunning(statusOf(b)) ? 0 : 1
       if (ra !== rb) return ra - rb
       return b.time.updated - a.time.updated
-    })
+    }
+    const parents = all.filter((s) => s.parentID === undefined).toSorted(sortFn)
+    const out: { session: Session; depth: 0 | 1 }[] = []
+    for (const p of parents) {
+      out.push({ session: p, depth: 0 })
+      for (const c of (childrenByParent.get(p.id) ?? []).toSorted(sortFn)) {
+        out.push({ session: c, depth: 1 })
+      }
+    }
+    return out
   })
 
-  const runningCount = createMemo(
-    () =>
-      sessions().filter((s) => {
-        const st = statusOf(sync.data.session_status[s.id], s)
-        return st === "running" || st === "retry" || st === "compacting"
-      }).length,
-  )
+  const runningCount = createMemo(() => rows().filter((r) => isRunning(statusOf(r.session))).length)
 
   const selectedIndex = createMemo(() => {
     const id = selectedID()
     if (!id) return 0
-    const idx = sessions().findIndex((s) => s.id === id)
+    const idx = rows().findIndex((r) => r.session.id === id)
     return idx === -1 ? 0 : idx
   })
 
-  const selected = createMemo(() => sessions()[selectedIndex()])
+  const selected = createMemo(() => rows()[selectedIndex()]?.session)
 
   createEffect(() => {
     const id = selectedID()
@@ -99,7 +139,8 @@ export function Agents() {
   })
 
   onMount(() => {
-    if (!selectedID() && sessions().length > 0) setSelectedID(sessions()[0].id)
+    void refreshBgJobs()
+    if (!selectedID() && rows().length > 0) setSelectedID(rows()[0].session.id)
   })
 
   function scrollToSelection() {
@@ -113,10 +154,10 @@ export function Agents() {
   }
 
   function move(delta: number) {
-    const list = sessions()
+    const list = rows()
     if (list.length === 0) return
     const next = Math.min(Math.max(selectedIndex() + delta, 0), list.length - 1)
-    setSelectedID(list[next].id)
+    setSelectedID(list[next].session.id)
     queueMicrotask(scrollToSelection)
   }
 
@@ -129,11 +170,17 @@ export function Agents() {
   async function interrupt() {
     const s = selected()
     if (!s) return
-    const status = statusOf(sync.data.session_status[s.id], s)
-    if (status === "idle") return
+    const job = bgJobs()[s.id]
     try {
-      await sdk.client.session.abort({ sessionID: s.id })
-      toast.show({ message: `Interrupted ${Locale.truncate(s.title, 30)}`, variant: "info" })
+      if (job && job.status === "running") {
+        await sdk.client.experimental.background.cancel({ id: s.id, workspace: project.workspace.current() })
+        toast.show({ message: `Cancelled ${Locale.truncate(s.title, 30)}`, variant: "info" })
+      } else {
+        if (statusOf(s) === "idle") return
+        await sdk.client.session.abort({ sessionID: s.id })
+        toast.show({ message: `Interrupted ${Locale.truncate(s.title, 30)}`, variant: "info" })
+      }
+      void refreshBgJobs()
     } catch (error) {
       toast.show({ title: "Failed to interrupt", message: errorMessage(error), variant: "error" })
     }
@@ -174,6 +221,7 @@ export function Agents() {
   function onCreated(sessionID: string) {
     setSelectedID(sessionID)
     void sync.session.refresh()
+    void refreshBgJobs()
   }
 
   const agentsCommands = createMemo(() => [
@@ -216,11 +264,18 @@ export function Agents() {
       .filter((p) => p.type === "text")
       .map((p) => (p as { text: string }).text)
       .join("")
-    return { session: s, lastAssistant, text }
+    return { session: s, lastAssistant, text, job: bgJobs()[s.id] }
   })
 
   function gutterFor(s: Session): JSX.Element {
-    const status = statusOf(sync.data.session_status[s.id], s)
+    const job = bgJobs()[s.id]
+    if (job) {
+      if (job.status === "running") return <Spinner />
+      if (job.status === "error") return <text fg={theme.error}>✗</text>
+      if (job.status === "cancelled") return <text fg={theme.textMuted}>⊘</text>
+      return <text fg={theme.success}>✓</text>
+    }
+    const status = statusOf(s)
     if (status === "running" || status === "compacting") return <Spinner />
     if (status === "retry") return <text fg={theme.warning}>↻</text>
     const errored = (sync.data.message[s.id] ?? []).some((m) => m.role === "assistant" && m.error)
@@ -239,17 +294,11 @@ export function Agents() {
   }
 
   function durationLabel(s: Session): string {
-    const status = statusOf(sync.data.session_status[s.id], s)
-    const end = status === "running" || status === "compacting" || status === "retry" ? now() : s.time.updated
+    const status = statusOf(s)
+    const end = isRunning(status) ? now() : s.time.updated
     const secs = Math.max(0, Math.floor((end - s.time.created) / 1000))
     return formatDuration(secs)
   }
-
-  const rowHeight = 1
-  const listHeight = createMemo(() => {
-    const total = dimensions().height
-    return Math.max(8, Math.floor(total * 0.5))
-  })
 
   return (
     <box flexGrow={1} minHeight={0} flexDirection="column" backgroundColor={theme.background}>
@@ -257,7 +306,7 @@ export function Agents() {
         <text fg={theme.accent}>
           Agents{" "}
           <span style={{ fg: theme.textMuted }}>
-            {sessions().length} session{sessions().length === 1 ? "" : "s"} · {runningCount()} running
+            {rows().length} session{rows().length === 1 ? "" : "s"} · {runningCount()} running
           </span>
         </text>
       </box>
@@ -279,17 +328,19 @@ export function Agents() {
           flexDirection="column"
         >
           <Show
-            when={sessions().length > 0}
+            when={rows().length > 0}
             fallback={<box paddingLeft={2} paddingTop={1}><text fg={theme.textMuted}>No agents yet. Type below to dispatch one.</text></box>}
           >
-            <For each={sessions()}>
-              {(s) => {
+            <For each={rows()}>
+              {(row) => {
+                const s = row.session
                 const isSelected = createMemo(() => selectedID() === s.id)
+                const titleColor = () => (row.depth === 1 ? theme.textMuted : isSelected() ? theme.selectedListItemText : theme.text)
                 return (
                   <box
-                    height={rowHeight}
+                    height={1}
                     flexShrink={0}
-                    paddingLeft={1}
+                    paddingLeft={1 + row.depth * 2}
                     paddingRight={1}
                     backgroundColor={isSelected() ? theme.backgroundElement : undefined}
                     onMouseDown={() => {
@@ -302,14 +353,14 @@ export function Agents() {
                     }}
                   >
                     <box width={2} flexShrink={0}>{gutterFor(s)}</box>
-                    <text fg={isSelected() ? theme.selectedListItemText : theme.text} flexGrow={1} truncate>
-                      {Locale.truncate(s.title || "Untitled", 48)}
+                    <text fg={titleColor()} flexGrow={1} truncate>
+                      {row.depth === 1 ? "↳ " : ""}{Locale.truncate(s.title || "Untitled", 44)}
                     </text>
                     <text fg={theme.textMuted} flexShrink={0} paddingLeft={2}>
-                      {Locale.truncate(modelLabel(s), 28)}
+                      {Locale.truncate(modelLabel(s), 26)}
                     </text>
                     <text fg={theme.textMuted} flexShrink={0} paddingLeft={2}>
-                      {Locale.truncate(cwdLabel(s), 18)}
+                      {Locale.truncate(cwdLabel(s), 16)}
                     </text>
                     <text fg={theme.textMuted} flexShrink={0} paddingLeft={2}>
                       {durationLabel(s)}
@@ -338,12 +389,17 @@ export function Agents() {
               <text fg={theme.textMuted}>
                 {modelLabel(d().session)} · {d().session.agent ?? "default"} · {cwdLabel(d().session)} ·{" "}
                 {durationLabel(d().session)}
+                <Show when={d().job}>
+                  {(job) => <span style={{ fg: theme.accent }}> · bg: {job().status}</span>}
+                </Show>
               </text>
             </box>
             <box flexGrow={1} minHeight={0}>
               <text fg={theme.text}>
                 {(() => {
                   const dval = d()
+                  if (dval.job?.error) return Locale.truncate(dval.job.error, 400)
+                  if (dval.job?.output) return Locale.truncate(dval.job.output, 400)
                   if (dval.text) return Locale.truncate(dval.text, 400)
                   const last = dval.lastAssistant
                   if (!last) return "(no messages yet)"
